@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use axum::{routing::{get, post}, Router, Json, extract::State};
+
+type SharedState = Arc<Mutex<Telemetry>>;
 
 #[derive(Clone, Serialize, Debug)]
 struct Telemetry {
