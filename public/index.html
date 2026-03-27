@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoBase Command Center</title>
+    <style>
+        body { font-family: monospace; background-color: #1e1e1e; color: #00ff00; padding: 20px; }
+        .dashboard { border: 2px solid #00ff00; padding: 20px; max-width: 400px; margin: 0 auto; border-radius: 10px; }
+        .stat-box { background-color: #2a2a2a; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        button { background-color: #00ff00; color: #000; border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; margin-right: 10px; font-family: monospace; }
+        button:hover { background-color: #00cc00; }
+        .stop-btn { background-color: #ff3333; color: white; }
+        .stop-btn:hover { background-color: #cc0000; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard">
+        <h2>🤖 RoBase Telemetry</h2>
+        
+        <div class="stat-box">
+            <strong>Status:</strong> <span id="status">Connecting...</span>
+        </div>
+        <div class="stat-box">
+            <strong>Battery:</strong> <span id="battery">--</span>%
+        </div>
+        <div class="stat-box">
+            <strong>Temp:</strong> <span id="temp">--</span>°C
+        </div>
+
+        <h3>Controls</h3>
+        <button onclick="sendCommand('MOVE_FORWARD', 75)">Move Forward</button>
+        <button class="stop-btn" onclick="sendCommand('STOP', 0)">Stop</button>
+    </div>
+
+    <script>
+        // 1. Fetch telemetry data every 2 seconds
+        async function fetchTelemetry() {
+            try {
+                const response = await fetch('/api/telemetry');
+                const data = await response.json();
+                
+                document.getElementById('status').innerText = data.status;
+                document.getElementById('battery').innerText = data.battery_level;
+                document.getElementById('temp').innerText = data.temperature_c;
+            } catch (err) {
+                document.getElementById('status').innerText = "CONNECTION LOST";
+                document.getElementById('status').style.color = "red";
+            }
+        }
+
+        // 2. Send commands when buttons are clicked
+        async function sendCommand(action, speed) {
+            try {
+                await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    // Send the Rust struct format we defined
+                    body: JSON.stringify({ action: action, speed: speed })
+                });
+                
+                // Fetch the new state immediately after sending
+                fetchTelemetry();
+            } catch (err) {
+                console.error("Failed to send command", err);
+            }
+        }
+
+        // 3. Start polling the telemetry as soon as the page loads
+        setInterval(fetchTelemetry, 2000);
+        fetchTelemetry(); // Initial fetch
+    </script>
+</body>
+</html>

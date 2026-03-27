@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use axum::{routing::{get, post}, Router, Json, extract::State};
+use tower_http::services::ServeDir;
 
 type SharedState = Arc<Mutex<Telemetry>>;
 
@@ -51,6 +52,7 @@ async fn main() {
 
     // Build the router
     let app = Router::new()
+        .nest_service("/", ServeDir::new("public"))
         .route("/api/telemetry", get(get_telemetry))
         .route("/api/command", post(send_command))
         .with_state(initial_state); // Pass state to handlers [00:35:34]
