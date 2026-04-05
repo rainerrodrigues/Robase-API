@@ -1,63 +1,96 @@
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use axum::{routing::{get, post}, Router, Json, extract::State};
 use tower_http::services::ServeDir;
+use sqlx::{sqlite::{SqlitePoolOptions, SqliteConnectOptions}, SqlitePool, FromRow};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
-type SharedState = Arc<Mutex<Telemetry>>;
-
-#[derive(Clone, Serialize, Debug)]
+#[derive(Clone, Serialize, Debug, FromRow)]
 struct Telemetry {
-    battery_level: u8,
-    temperature_c: f32,
+    battery_level: i64,
+    temperature_c: f64,
     status: String,
 }
 
 #[derive(Deserialize, Debug)]
 struct CommandPayload {
-    action: String, // e.g., "MOVE_FORWARD", "STOP"
-    speed: Option<u8>,
+    action: String,
+    speed: Option<i64>,
 }
 
-async fn get_telemetry(State(state): State<SharedState>) -> Json<Telemetry> {
-    let data = state.lock().await;
-    Json(data.clone())
+// Handlers
+async fn get_telemetry(State(pool): State<SqlitePool>) -> Json<Telemetry> {
+    let record: Telemetry = sqlx::query_as(
+        "SELECT battery_level, temperature_c, status FROM telemetry ORDER BY id DESC LIMIT 1"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap(); 
+
+    Json(record)
 }
 
 async fn send_command(
-    State(state): State<SharedState>,
+    State(pool): State<SqlitePool>,
     Json(payload): Json<CommandPayload>,
 ) -> Json<Telemetry> {
-    let mut data = state.lock().await;
+    
+    let mut current: Telemetry = sqlx::query_as(
+        "SELECT battery_level, temperature_c, status FROM telemetry ORDER BY id DESC LIMIT 1"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
 
-    // Simulate the robot reacting to a command
     if payload.action == "MOVE_FORWARD" {
-        data.status = format!("Moving at speed {:?}", payload.speed.unwrap_or(10));
-        data.battery_level -= 1; // Simulate battery drain
+        current.status = format!("Moving at speed {}", payload.speed.unwrap_or(10));
+        current.battery_level -= 1; 
     } else if payload.action == "STOP" {
-        data.status = "Idle".to_string();
+        current.status = "Idle".to_string();
     }
 
-    Json(data.clone())
+    sqlx::query("INSERT INTO telemetry (battery_level, temperature_c, status) VALUES (?, ?, ?)")
+        .bind(current.battery_level)
+        .bind(current.temperature_c)
+        .bind(&current.status)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    Json(current)
 }
 
+// Main Routing and DB Setup
 #[tokio::main]
 async fn main() {
-    // Initialize starting telemetry
-    let initial_state = Arc::new(Mutex::new(Telemetry {
-        battery_level: 100,
-        temperature_c: 24.5,
-        status: "Idle".to_string(),
-    }));
+    let options = SqliteConnectOptions::from_str("sqlite://robase.db")
+        .unwrap()
+        .create_if_missing(true);
+        
+    let pool = SqlitePoolOptions::new()
+        .max_connections(5)
+        .connect_with(options)
+        .await
+        .unwrap();
 
-    // Build the router
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS telemetry (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            battery_level INTEGER,
+            temperature_c REAL,
+            status TEXT
+        )"
+    ).execute(&pool).await.unwrap();
+
+    sqlx::query("INSERT INTO telemetry (battery_level, temperature_c, status) SELECT 100, 24.5, 'Idle' WHERE NOT EXISTS (SELECT 1 FROM telemetry)")
+        .execute(&pool).await.unwrap();
+
     let app = Router::new()
         .nest_service("/", ServeDir::new("public"))
         .route("/api/telemetry", get(get_telemetry))
         .route("/api/command", post(send_command))
-        .with_state(initial_state); // Pass state to handlers [00:35:34]
+        .with_state(pool); 
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("RoBase API running on port 3000");
+    println!("RoBase API running on port 3000 with SQLite!");
     axum::serve(listener, app).await.unwrap();
 }
