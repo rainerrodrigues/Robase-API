@@ -32,6 +32,9 @@
         <h3>Controls</h3>
         <button onclick="sendCommand('MOVE_FORWARD', 75)">Move Forward</button>
         <button class="stop-btn" onclick="sendCommand('STOP', 0)">Stop</button>
+
+        <h3>Database History Log</h3>
+        <div id="history" style="font-size: 12px; color: #888;"></div>
     </div>
 
     <script>
@@ -47,6 +50,15 @@
             } catch (err) {
                 document.getElementById('status').innerText = "CONNECTION LOST";
                 document.getElementById('status').style.color = "red";
+
+                const historyRes = await fetch('/api/history');
+                const historyData = await historyRes.json();
+                
+                let historyHtml = "";
+                historyData.forEach((row, index) => {
+                    historyHtml += `<p>[Log ${index + 1}] Battery: ${row.battery_level}% | Status: ${row.status}</p>`;
+                });
+                document.getElementById('history').innerHTML = historyHtml;
             }
         }
 

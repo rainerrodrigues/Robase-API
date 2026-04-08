@@ -29,6 +29,18 @@ async fn get_telemetry(State(pool): State<SqlitePool>) -> Json<Telemetry> {
     Json(record)
 }
 
+async fn get_history(State(pool): State<SqlitePool>) -> Json<Vec<Telemetry>> {
+    // Fetch the last 5 commands from the database
+    let records: Vec<Telemetry> = sqlx::query_as(
+        "SELECT battery_level, temperature_c, status FROM telemetry ORDER BY id DESC LIMIT 5"
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+
+    Json(records)
+}
+
 async fn send_command(
     State(pool): State<SqlitePool>,
     Json(payload): Json<CommandPayload>,
@@ -87,6 +99,7 @@ async fn main() {
     let app = Router::new()
         .nest_service("/", ServeDir::new("public"))
         .route("/api/telemetry", get(get_telemetry))
+        .route("/api/history", get(get_history))
         .route("/api/command", post(send_command))
         .with_state(pool); 
 
